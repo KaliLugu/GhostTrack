@@ -4,7 +4,13 @@ Useful tool to track location or mobile number, so this tool can be called osint
 <img src="https://github.com/HunxByts/GhostTrack/blob/main/asset/bn.png"/>
 
 New update :
-```Version 2.2```
+```Version 2.3```
+
+### Features
+- IP Tracker with Shodan integration
+- Phone Number Tracker
+- Username Tracker with variations
+- Show Your IP
 
 ### Instalation on Linux (deb)
 ```
@@ -26,26 +32,36 @@ pip3 install -r requirements.txt
 python3 GhostTR.py
 ```
 
-Display on the menu ```IP Tracker```
+### Features Details
 
-<img src="https://github.com/HunxByts/GhostTrack/blob/main/asset/ip.png " />
+**IP Tracker**: Tracks IP information and checks reputation with AbuseIPDB (requires free API key).
 
-on the IP Track menu, you can combo with the seeker tool to get the target IP
-<details>
-<summary>:zap: Install Seeker :</summary>
-- <strong><a href="https://github.com/thewhiteh4t/seeker">Get Seeker</a></strong>
-</details>
+**Phone Number Tracker**: Gets information from phone numbers.
 
-Display on the menu ```Phone Tracker```
+**Username Tracker**: Checks username on multiple social media platforms, including common variations. Uses advanced content analysis to accurately detect existing vs non-existing accounts (not just HTTP status codes).
 
-<img src="https://github.com/HunxByts/GhostTrack/blob/main/asset/phone.png" />
+**Show Your IP**: Displays your current IP address.
+### Advanced Features
 
-on this menu you can search for information from the target phone number
+**Smart Account Detection**: The username tracker doesn't just check HTTP status codes. It analyzes the actual page content to detect:
+- Platform-specific error messages
+- Profile indicators (followers, posts, bio, etc.)
+- Account suspension or deletion notices
 
-Display on the menu ```Username Tracker```
+This eliminates false positives where sites return HTTP 200 but show "account not found" messages.
 
-<img src="https://github.com/HunxByts/GhostTrack/blob/main/asset/User.png"/>
-on this menu you can search for information from the target username on social media
+**Username Variations**: Automatically generates and tests common username variations including:
+- Adding numbers (123, 2024, etc.)
+- Adding prefixes/suffixes (_username, username_official)
+- Case variations (uppercase, lowercase, capitalize)
+- Space replacements (_, ., -)
+### Getting API Keys
+
+**AbuseIPDB API Key** (for IP reputation checking):
+1. Go to https://www.abuseipdb.com/
+2. Create a free account
+3. Go to API settings and generate your API key
+4. Use it when prompted in the IP Tracker
 
 <details>
 <summary>:zap: Author :</summary>
