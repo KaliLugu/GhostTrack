@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 # << CODE BY HUNX04
 # << MAU RECODE ??? IZIN DULU LAH,  MINIMAL TAG AKUN GITHUB MIMIN YANG MENGARAH KE AKUN INI, LEBIH GAMPANG SI PAKE FORK
 # << KALAU DI ATAS TIDAK DI IKUTI MAKA AKAN MENDAPATKAN DOSA KARENA MIMIN GAK IKHLAS
@@ -10,6 +10,7 @@ import json
 import requests
 import time
 import os
+import sys
 import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
 from sys import stderr
@@ -29,9 +30,32 @@ Wh = '\033[1;37m'
 
 abuse_key = os.getenv('AbuseIPDBKey')
 
-if (abuse_key == "null"):
-    print("ERR: pls copy template.env, rename the copy for '.env' and put your api key in this file.", file=sys.stderr)
-    sys.exit(1)
+if abuse_key is None or abuse_key.strip().lower() == "null":
+    print(
+        "WARN: AbuseIPDBKey is missing. IP reputation check will be skipped.\n"
+        "      (Tip: copy template.env to .env and set AbuseIPDBKey)",
+        file=stderr,
+    )
+    abuse_key = ""
+
+
+def _import_sherlock():
+    """
+    Import Sherlock (vendored in ./sherlock) if available.
+    Returns tuple (sherlock_mod, SitesInformation, QueryNotifyPrint, QueryStatus) or (None, ...).
+    """
+    sherlock_root = os.path.join(os.path.dirname(__file__), "sherlock")
+    if os.path.isdir(sherlock_root) and sherlock_root not in sys.path:
+        sys.path.insert(0, sherlock_root)
+
+    try:
+        from sherlock_project import sherlock as sherlock_mod  # type: ignore
+        from sherlock_project.sites import SitesInformation  # type: ignore
+        from sherlock_project.notify import QueryNotifyPrint  # type: ignore
+        from sherlock_project.result import QueryStatus  # type: ignore
+        return sherlock_mod, SitesInformation, QueryNotifyPrint, QueryStatus
+    except Exception:
+        return None, None, None, None
 
 # utilities
 
@@ -46,40 +70,56 @@ def is_option(func):
 
 
 def generate_username_variations(username):
-    variations = [username]
+    username = (username or "").strip()
+    if not username:
+        return []
+
+    variations = []
+    seen = set()
+
+    def add(v):
+        if v and v not in seen:
+            seen.add(v)
+            variations.append(v)
+
+    # Always start with the exact user input.
+    add(username)
+
     # Common variations
-    variations.append(username + "123")
-    variations.append(username + "1234")
-    variations.append(username + "_")
-    variations.append("_" + username)
-    variations.append(username + ".")
-    variations.append(username + "official")
-    variations.append(username + "real")
-    variations.append(username + "1")
-    variations.append(username + "2")
-    variations.append(username + "3")
-    variations.append(username + "2023")
-    variations.append(username + "2024")
-    variations.append(username + "2025")
-    variations.append(username + "2026")
-    variations.append(username.replace(" ", ""))
-    variations.append(username.replace(" ", "_"))
-    variations.append(username.replace(" ", "."))
-    variations.append(username.replace(" ", "-"))
-    variations.append(username.lower())
-    variations.append(username.upper())
-    variations.append(username.capitalize())
+    add(username + "123")
+    add(username + "1234")
+    add(username + "_")
+    add("_" + username)
+    add(username + ".")
+    add(username + "official")
+    add(username + "real")
+    add(username + "1")
+    add(username + "2")
+    add(username + "3")
+    add(username + "2023")
+    add(username + "2024")
+    add(username + "2025")
+    add(username + "2026")
+    add(username.replace(" ", ""))
+    add(username.replace(" ", "_"))
+    add(username.replace(" ", "."))
+    add(username.replace(" ", "-"))
+    add(username.lower())
+    add(username.upper())
+    add(username.capitalize())
+
     # If username has spaces, split and try combinations
     parts = username.split()
     if len(parts) > 1:
-        variations.append(''.join(parts))
-        variations.append(parts[0] + parts[1])
-        variations.append(parts[0][0] + parts[1])
+        add("".join(parts))
+        add(parts[0] + parts[1])
+        add(parts[0][0] + parts[1])
+
     # Add numbers at end
     for i in range(10):
-        variations.append(username + str(i))
-    # Remove duplicates
-    return list(set(variations))
+        add(username + str(i))
+
+    return variations
 
 
 def check_account_exists(url, site_name, username):
@@ -576,50 +616,126 @@ def TrackLu():
     try:
         username = input(f"\n {Wh}Enter Username : {Gr}")
         variations = generate_username_variations(username)
-        results = {}
-        social_media = [
-            {"url": "https://www.facebook.com/{}", "name": "Facebook"},
-            {"url": "https://www.twitter.com/{}", "name": "Twitter"},
-            {"url": "https://www.instagram.com/{}", "name": "Instagram"},
-            {"url": "https://www.linkedin.com/in/{}", "name": "LinkedIn"},
-            {"url": "https://www.github.com/{}", "name": "GitHub"},
-            {"url": "https://www.pinterest.com/{}", "name": "Pinterest"},
-            {"url": "https://www.tumblr.com/{}", "name": "Tumblr"},
-            {"url": "https://www.youtube.com/{}", "name": "Youtube"},
-            {"url": "https://soundcloud.com/{}", "name": "SoundCloud"},
-            {"url": "https://www.snapchat.com/add/{}", "name": "Snapchat"},
-            {"url": "https://www.tiktok.com/@{}", "name": "TikTok"},
-            {"url": "https://www.behance.net/{}", "name": "Behance"},
-            {"url": "https://www.medium.com/@{}", "name": "Medium"},
-            {"url": "https://www.quora.com/profile/{}", "name": "Quora"},
-            {"url": "https://www.flickr.com/people/{}", "name": "Flickr"},
-            {"url": "https://www.periscope.tv/{}", "name": "Periscope"},
-            {"url": "https://www.twitch.tv/{}", "name": "Twitch"},
-            {"url": "https://www.dribbble.com/{}", "name": "Dribbble"},
-            {"url": "https://www.stumbleupon.com/stumbler/{}", "name": "StumbleUpon"},
-            {"url": "https://www.ello.co/{}", "name": "Ello"},
-            {"url": "https://www.producthunt.com/@{}", "name": "Product Hunt"},
-            {"url": "https://www.snapchat.com/add/{}", "name": "Snapchat"},
-            {"url": "https://www.telegram.me/{}", "name": "Telegram"},
-            {"url": "https://www.weheartit.com/{}", "name": "We Heart It"}
-        ]
-        for variation in variations:
-            print(f"{Wh}Checking variation: {Gr}{variation}")
-            for site in social_media:
-                url = site['url'].format(variation)
-                exists, result = check_account_exists(url, site['name'], variation)
-                if exists:
-                    results[f"{site['name']} ({variation})"] = result
-                else:
-                    results[f"{site['name']} ({variation})"] = (f"{Ye}{result} {Ye}!")
+        sherlock_mod, SitesInformation, QueryNotifyPrint, QueryStatus = _import_sherlock()
+
+        # Prefer Sherlock if available (bigger site list, better concurrency/WAF handling).
+        if sherlock_mod is not None:
+            class _SilentNotify:
+                def start(self, message=None):
+                    return
+
+                def update(self, result):
+                    return
+
+                def finish(self, message=None):
+                    return
+
+            data_path = os.path.join(
+                os.path.dirname(__file__),
+                "sherlock",
+                "sherlock_project",
+                "resources",
+                "data.json",
+            )
+            sites = SitesInformation(data_path, honor_exclusions=True)
+            try:
+                sites.remove_nsfw_sites()
+            except Exception:
+                pass
+            site_data = {site.name: site.information for site in sites}
+
+            print(f"\n {Wh}========== {Gr}SHERLOCK USERNAME SEARCH {Wh}==========")
+            safe_variations = [
+                v for v in variations
+                if v and not v.endswith(".") and not v.startswith(".")
+            ]
+            print(f" {Wh}Variations:{Gr} {len(safe_variations)}  {Wh}|  Sites:{Gr} {len(site_data)}\n")
+
+            # Print only "found" results like GhostTR used to do.
+            query_notify = _SilentNotify()
+
+            for idx, variation in enumerate(safe_variations):
+                # Always run the exact username first.
+                # For each next variation, ask whether to continue (Enter = Yes).
+                if idx > 0:
+                    ans = input(f"{Wh}Check variation {Gr}{variation}{Wh}? (Y/n): {Gr}").strip().lower()
+                    if ans in {"n", "no"}:
+                        print(f"{Wh}\nStopped variations.{Wh}\n")
+                        break
+
+                print(f"{Wh}Checking: {Gr}{variation}{Wh}")
+                try:
+                    results = sherlock_mod.sherlock(
+                        variation,
+                        site_data,
+                        query_notify,
+                        dump_response=False,
+                        proxy=None,
+                        timeout=30,
+                    )
+                except Exception as e:
+                    print(f" {Wh}[ {Ye}! {Wh}] {Ye}Skipped (invalid variation for some sites): {e}{Wh}\n")
+                    continue
+
+                found_any = False
+                for site_name, payload in results.items():
+                    status = payload.get("status")
+                    if status is not None and status.status == QueryStatus.CLAIMED:
+                        found_any = True
+                        print(f" {Wh}[ {Gr}+ {Wh}] {site_name}: {Gr}{payload.get('url_user')}")
+
+                if not found_any:
+                    print(f" {Wh}[ {Ye}- {Wh}] {Ye}No hits for this variation{Wh}")
+                print()
+        else:
+            # Fallback to the legacy detector if Sherlock dependencies aren't installed.
+            results = {}
+            social_media = [
+                {"url": "https://www.facebook.com/{}", "name": "Facebook"},
+                {"url": "https://www.twitter.com/{}", "name": "Twitter"},
+                {"url": "https://www.instagram.com/{}", "name": "Instagram"},
+                {"url": "https://www.linkedin.com/in/{}", "name": "LinkedIn"},
+                {"url": "https://www.github.com/{}", "name": "GitHub"},
+                {"url": "https://www.pinterest.com/{}", "name": "Pinterest"},
+                {"url": "https://www.tumblr.com/{}", "name": "Tumblr"},
+                {"url": "https://www.youtube.com/{}", "name": "Youtube"},
+                {"url": "https://soundcloud.com/{}", "name": "SoundCloud"},
+                {"url": "https://www.snapchat.com/add/{}", "name": "Snapchat"},
+                {"url": "https://www.tiktok.com/@{}", "name": "TikTok"},
+                {"url": "https://www.behance.net/{}", "name": "Behance"},
+                {"url": "https://www.medium.com/@{}", "name": "Medium"},
+                {"url": "https://www.quora.com/profile/{}", "name": "Quora"},
+                {"url": "https://www.flickr.com/people/{}", "name": "Flickr"},
+                {"url": "https://www.twitch.tv/{}", "name": "Twitch"},
+                {"url": "https://www.dribbble.com/{}", "name": "Dribbble"},
+                {"url": "https://www.telegram.me/{}", "name": "Telegram"},
+                {"url": "https://www.weheartit.com/{}", "name": "We Heart It"},
+            ]
+            print(
+                f"\n {Ye}Sherlock not available (missing deps). Using legacy username checker.{Wh}\n"
+            )
+            for idx, variation in enumerate(variations):
+                if idx > 0:
+                    ans = input(f"{Wh}Check variation {Gr}{variation}{Wh}? (Y/n): {Gr}").strip().lower()
+                    if ans in {"n", "no"}:
+                        print(f"{Wh}\nStopped variations.{Wh}\n")
+                        break
+                print(f"{Wh}Checking variation: {Gr}{variation}")
+                for site in social_media:
+                    url = site["url"].format(variation)
+                    exists, result = check_account_exists(url, site["name"], variation)
+                    if exists:
+                        results[f"{site['name']} ({variation})"] = result
+                    else:
+                        results[f"{site['name']} ({variation})"] = (f"{Ye}{result} {Ye}!")
+
+            print(f"\n {Wh}========== {Gr}SHOW INFORMATION USERNAME {Wh}==========")
+            print()
+            for site, url in results.items():
+                print(f" {Wh}[ {Gr}+ {Wh}] {site} : {Gr}{url}")
     except Exception as e:
         print(f"{Re}Error : {e}")
         return
-
-    print(f"\n {Wh}========== {Gr}SHOW INFORMATION USERNAME {Wh}==========")
-    print()
-    for site, url in results.items():
-        print(f" {Wh}[ {Gr}+ {Wh}] {site} : {Gr}{url}")
 
 
 @is_option

@@ -1,3 +1,7 @@
 requests
 phonenumbers
 python-dotenv
+colorama
+requests-futures
+pandas
+tomli

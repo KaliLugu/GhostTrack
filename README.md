@@ -34,8 +34,11 @@ pkg install python3
 ```
 git clone https://github.com/HunxByts/GhostTrack.git
 cd GhostTrack
-pip3 install -r requirements.txt
-python3 GhostTR.py
+
+# Arch / environnements "externally managed" (PEP 668)
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python GhostTR.py
 ```
 
 ### Features Details
@@ -44,7 +47,7 @@ python3 GhostTR.py
 
 **Phone Number Tracker**: Gets information from phone numbers.
 
-**Username Tracker**: Checks username on multiple social media platforms, including common variations. Uses advanced content analysis to accurately detect existing vs non-existing accounts (not just HTTP status codes).
+**Username Tracker**: Checks username with common variations, powered by the vendored `sherlock/` project (large site list + parallel checks). If Sherlock deps are missing, the tool falls back to the legacy checker.
 
 **Show Your IP**: Displays your current IP address.
 ### Advanced Features
