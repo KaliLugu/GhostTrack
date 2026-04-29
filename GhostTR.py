@@ -13,6 +13,10 @@ import os
 import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
 from sys import stderr
+from dotenv import load_dotenv
+
+# read .env
+load_dotenv()
 
 Bl = '\033[30m'  # VARIABLE BUAT WARNA CUYY
 Re = '\033[1;31m'
@@ -23,6 +27,11 @@ Mage = '\033[1;35m'
 Cy = '\033[1;36m'
 Wh = '\033[1;37m'
 
+abuse_key = os.getenv('AbuseIPDBKey')
+
+if (abuse_key == "null"):
+    print("ERR: pls copy template.env, rename the copy for '.env' and put your api key in this file.", file=sys.stderr)
+    sys.exit(1)
 
 # utilities
 
@@ -407,9 +416,6 @@ def check_account_exists(url, site_name, username):
 @is_option
 def IP_Track():
     ip = input(f"{Wh}\n Enter IP target : {Gr}")  # INPUT IP ADDRESS
-
-    # Ask for AbuseIPDB API Key
-    abuse_key = input(f"{Wh}\n Enter your AbuseIPDB API Key (or press Enter to skip) : {Gr}")
 
     print()
     print(f' {Wh}============= {Gr}SHOW INFORMATION IP ADDRESS {Wh}=============')

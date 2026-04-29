@@ -18,6 +18,12 @@ sudo apt-get install git
 sudo apt-get install python3
 ```
 
+### Set api variable
+```
+cp template.env .env
+```
+in .env paste by your api key for AbuseIPDBKey value
+
 ### Instalation on Termux
 ```
 pkg install git
