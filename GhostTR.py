@@ -10,7 +10,16 @@ import json
 import requests
 import time
 import os
+import re
 import sys
+import unicodedata
+import itertools
+import select
+import termios
+import tty
+from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from importlib import resources
 import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
 from sys import stderr
@@ -28,7 +37,7 @@ Mage = '\033[1;35m'
 Cy = '\033[1;36m'
 Wh = '\033[1;37m'
 
-abuse_key = os.getenv('AbuseIPDBKey')
+abuse_key = os.getenv("AbuseIPDBKey")
 
 if abuse_key is None or abuse_key.strip().lower() == "null":
     print(
@@ -39,19 +48,7 @@ if abuse_key is None or abuse_key.strip().lower() == "null":
     abuse_key = ""
 
 
-def _import_sherlock():
-    sherlock_root = os.path.join(os.path.dirname(__file__), "sherlock")
-    if os.path.isdir(sherlock_root) and sherlock_root not in sys.path:
-        sys.path.insert(0, sherlock_root)
-
-    try:
-        from sherlock_project import sherlock as sherlock_mod  # type: ignore
-        from sherlock_project.sites import SitesInformation  # type: ignore
-        from sherlock_project.notify import QueryNotifyPrint  # type: ignore
-        from sherlock_project.result import QueryStatus  # type: ignore
-        return sherlock_mod, SitesInformation, QueryNotifyPrint, QueryStatus
-    except Exception:
-        return None, None, None, None
+# utilities
 
 # decorator for attaching run_banner to a function
 def is_option(func):
@@ -64,56 +61,240 @@ def is_option(func):
 
 
 def generate_username_variations(username):
+    """
+    Generate smarter username variations, without exploding to millions.
+    Order matters: most likely variants first.
+    """
     username = (username or "").strip()
     if not username:
         return []
 
-    variations = []
     seen = set()
+    out = []
 
-    def add(v):
-        if v and v not in seen:
+    def add(v: str):
+        v = (v or "").strip()
+        if not v:
+            return
+        if len(v) > 64:
+            return
+        if v not in seen:
             seen.add(v)
-            variations.append(v)
+            out.append(v)
 
-    # Always start with the exact user input.
-    add(username)
+    def strip_accents(s: str) -> str:
+        return "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
 
-    # Common variations
-    add(username + "123")
-    add(username + "1234")
-    add(username + "_")
-    add("_" + username)
-    add(username + ".")
-    add(username + "official")
-    add(username + "real")
-    add(username + "1")
-    add(username + "2")
-    add(username + "3")
-    add(username + "2023")
-    add(username + "2024")
-    add(username + "2025")
-    add(username + "2026")
-    add(username.replace(" ", ""))
-    add(username.replace(" ", "_"))
-    add(username.replace(" ", "."))
-    add(username.replace(" ", "-"))
-    add(username.lower())
-    add(username.upper())
-    add(username.capitalize())
+    base = username
+    add(base)
 
-    # If username has spaces, split and try combinations
-    parts = username.split()
-    if len(parts) > 1:
-        add("".join(parts))
-        add(parts[0] + parts[1])
-        add(parts[0][0] + parts[1])
+    lowered = base.lower()
+    add(lowered)
 
-    # Add numbers at end
-    for i in range(10):
-        add(username + str(i))
+    # Normalize separators and accents.
+    base_no_acc = strip_accents(base)
+    add(base_no_acc)
+    base_no_acc_low = base_no_acc.lower()
+    add(base_no_acc_low)
 
-    return variations
+    # Collapse whitespace and common separators into tokens.
+    tokens = [t for t in re.split(r"[\s._\-]+", base_no_acc_low) if t]
+    if tokens:
+        add("".join(tokens))
+        add("_".join(tokens))
+        add(".".join(tokens))
+        add("-".join(tokens))
+
+        if len(tokens) >= 2:
+            first, last = tokens[0], tokens[-1]
+            add(first + last)
+            add(last + first)
+            add(first[0] + last if first else "")
+            add(first + last[0] if last else "")
+
+    # If user already has digits, try separating and recombining.
+    m = re.match(r"^([a-zA-Z._\-]+)(\d{1,6})$", base_no_acc_low)
+    if m:
+        name, digits = m.group(1), m.group(2)
+        name_tokens = [t for t in re.split(r"[._\-]+", name) if t]
+        if name_tokens:
+            core = "".join(name_tokens)
+            add(core + digits)
+            add(core + "_" + digits)
+            add(core + "." + digits)
+            add(core + "-" + digits)
+
+    # Prefix/suffix patterns commonly used.
+    prefixes = ["the", "iam", "its", "im", "real", "official"]
+    suffixes = ["official", "real", "the", "tv", "yt", "x", "hq", "vip"]
+    for core in [base_no_acc_low, "".join(tokens) if tokens else base_no_acc_low]:
+        for p in prefixes:
+            add(p + core)
+            add(p + "_" + core)
+        for sfx in suffixes:
+            add(core + sfx)
+            add(core + "_" + sfx)
+
+    # Years + small numbers (ranked).
+    for y in [2026, 2025, 2024, 2023, 2022, 2021, 2020]:
+        add(base_no_acc_low + str(y))
+        add(("".join(tokens) if tokens else base_no_acc_low) + str(y))
+
+    for n in ["1", "2", "3", "7", "9", "10", "11", "12", "69", "99", "100", "123", "1234"]:
+        add(base_no_acc_low + n)
+        add(("".join(tokens) if tokens else base_no_acc_low) + n)
+
+    # Simple leetspeak (limited so it doesn't explode).
+    leet_map = str.maketrans({"a": "4", "e": "3", "i": "1", "o": "0", "s": "5", "t": "7"})
+    core_low = "".join(tokens) if tokens else base_no_acc_low
+    leet = core_low.translate(leet_map)
+    if leet != core_low:
+        add(leet)
+        add(leet + "1")
+        add(leet + "69")
+
+    # Remove leading @ if present and re-add.
+    if base.startswith("@"):
+        add(base[1:])
+        add(base_no_acc_low.lstrip("@"))
+    else:
+        add("@" + base_no_acc_low)
+
+    # Final light cleanup: avoid trailing dot or leading dot.
+    cleaned = []
+    for v in out:
+        if v.startswith(".") or v.endswith("."):
+            continue
+        cleaned.append(v)
+    return cleaned
+
+
+def iter_username_variations_infinite(username):
+    """
+    API: infinite (or near-infinite) variations generator.
+
+    - Yields the smart finite set first (best guesses).
+    - Then yields an endless stream of new, unique-ish variants (mostly numeric suffix patterns).
+    - Designed to avoid repeating the same small set (unlike cycling a list).
+    """
+    seed = (username or "").strip()
+    if not seed:
+        return
+
+    # First, yield the smart finite set.
+    base_list = generate_username_variations(seed)
+    emitted = set()
+
+    def emit(v: str):
+        v = (v or "").strip()
+        if not v:
+            return
+        if len(v) > 64:
+            return
+        if v.startswith(".") or v.endswith("."):
+            return
+        if v in emitted:
+            return
+        emitted.add(v)
+        yield v
+
+    for v in base_list:
+        yield from emit(v)
+
+    # Choose a stable "core" to extend indefinitely.
+    def strip_accents(s: str) -> str:
+        return "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+
+    seed_no_acc = strip_accents(seed).lower().lstrip("@").strip()
+    tokens = [t for t in re.split(r"[\s._\-]+", seed_no_acc) if t]
+    core = "".join(tokens) if tokens else re.sub(r"[\s._\-]+", "", seed_no_acc)
+    core = core or seed_no_acc or seed.lower().lstrip("@")
+
+    # Patterns we will rotate through for each increasing number.
+    seps = ["", "_", ".", "-"]
+    prefixes = ["", "the", "iam", "its", "im", "real", "official"]
+    suffixes = ["", "official", "real", "tv", "yt", "x", "hq", "vip"]
+
+    # Endless numeric stream (fast + very common in real usernames).
+    for n in itertools.count(0):
+        s_n = str(n)
+        s_padded2 = f"{n:02d}" if n < 100 else None
+        s_padded3 = f"{n:03d}" if n < 1000 else None
+
+        candidates = []
+
+        # Core + number with separators.
+        for sep in seps:
+            candidates.append(core + sep + s_n)
+            if s_padded2:
+                candidates.append(core + sep + s_padded2)
+            if s_padded3:
+                candidates.append(core + sep + s_padded3)
+
+        # Prefix + core + number.
+        for p in prefixes:
+            if not p:
+                continue
+            candidates.append(p + core + s_n)
+            candidates.append(p + "_" + core + s_n)
+
+        # Core + suffix + number.
+        for sfx in suffixes:
+            if not sfx:
+                continue
+            candidates.append(core + sfx + s_n)
+            candidates.append(core + "_" + sfx + s_n)
+
+        # Year-like pattern (useful even beyond current year).
+        if 2000 <= n <= 2099:
+            candidates.append(core + str(n))
+            candidates.append(core + "_" + str(n))
+
+        for v in candidates:
+            yield from emit(v)
+
+
+def _try_import_sherlock():
+    """
+    Try importing Sherlock from the installed `sherlock-project` package.
+    Returns (sherlock_mod, SitesInformation, QueryStatus, data_json_path) or (None, ...).
+    """
+    try:
+        from sherlock_project import sherlock as sherlock_mod  # type: ignore
+        from sherlock_project.sites import SitesInformation  # type: ignore
+        from sherlock_project.result import QueryStatus  # type: ignore
+
+        traversable = resources.files("sherlock_project").joinpath("resources").joinpath("data.json")
+        with resources.as_file(traversable) as p:
+            data_path = str(p)
+        return sherlock_mod, SitesInformation, QueryStatus, data_path
+    except Exception:
+        return None, None, None, None
+
+
+@contextmanager
+def _cbreak_stdin():
+    """
+    Put stdin in cbreak mode to read single keys (ESC).
+    Only used for infinite mode on Unix-like terminals.
+    """
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        yield
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _read_key_nonblocking():
+    try:
+        r, _, _ = select.select([sys.stdin], [], [], 0)
+        if r:
+            return sys.stdin.read(1)
+    except Exception:
+        return None
+    return None
 
 
 def check_account_exists(url, site_name, username):
@@ -188,7 +369,7 @@ def check_account_exists(url, site_name, username):
             for msg in error_msgs:
                 if msg in content:
                     return False, "Account not found"
-            # GitHub returns 200 for all profiles, even non-existent ones
+            # GitHub returns 200 for many profile-like pages; rely on content indicators.
             # Key difference: fake profiles show "popular repositories" but real users don't
             if "popular repositories" in content:
                 return False, "Account not found"
@@ -609,11 +790,28 @@ def phoneGW():
 def TrackLu():
     try:
         username = input(f"\n {Wh}Enter Username : {Gr}")
-        variations = generate_username_variations(username)
-        sherlock_mod, SitesInformation, QueryNotifyPrint, QueryStatus = _import_sherlock()
+        print(f"\n {Wh}Variations mode:")
+        print(f" {Wh}[ {Gr}1{Wh} ] {Gr}Normal{Wh} (Y/n between variations)")
+        print(f" {Wh}[ {Gr}2{Wh} ] {Gr}Infini{Wh} (auto, ESC to stop, no Y/n, generates new variants)")
+        print(f" {Wh}[ {Gr}3{Wh} ] {Gr}No variations{Wh} (only exact username)")
+        mode = input(f"\n {Wh}Select mode (default 1): {Gr}").strip()
+        if mode not in {"1", "2", "3"}:
+            mode = "1"
 
-        # Prefer Sherlock if available (bigger site list, better concurrency/WAF handling).
+        if mode == "3":
+            variations = [username.strip()]
+        else:
+            variations = generate_username_variations(username)
+        results = {}
+        safe_variations = [v for v in variations if v and not v.endswith(".") and not v.startswith(".")]
+
+        sherlock_mod, SitesInformation, QueryStatus, data_path = _try_import_sherlock()
+
+        # Prefer Sherlock if available (much larger site list + better accuracy).
         if sherlock_mod is not None:
+            cpu = os.cpu_count() or 4
+            print(f"{Ye}Sherlock enabled{Wh} {Wh}(cpu={cpu}){Wh}")
+
             class _SilentNotify:
                 def start(self, message=None):
                     return
@@ -624,66 +822,45 @@ def TrackLu():
                 def finish(self, message=None):
                     return
 
-            data_path = os.path.join(
-                os.path.dirname(__file__),
-                "sherlock",
-                "sherlock_project",
-                "resources",
-                "data.json",
-            )
             sites = SitesInformation(data_path, honor_exclusions=True)
             try:
                 sites.remove_nsfw_sites()
             except Exception:
                 pass
             site_data = {site.name: site.information for site in sites}
+            print(f"{Wh}Sites loaded: {Gr}{len(site_data)}{Wh}\n")
 
-            print(f"\n {Wh}========== {Gr}SHERLOCK USERNAME SEARCH {Wh}==========")
-            safe_variations = [
-                v for v in variations
-                if v and not v.endswith(".") and not v.startswith(".")
-            ]
-            print(f" {Wh}Variations:{Gr} {len(safe_variations)}  {Wh}|  Sites:{Gr} {len(site_data)}\n")
-
-            # Print only "found" results like GhostTR used to do.
-            query_notify = _SilentNotify()
-
-            for idx, variation in enumerate(safe_variations):
-                # Always run the exact username first.
-                # For each next variation, ask whether to continue (Enter = Yes).
-                if idx > 0:
-                    ans = input(f"{Wh}Check variation {Gr}{variation}{Wh}? (Y/n): {Gr}").strip().lower()
-                    if ans in {"n", "no"}:
-                        print(f"{Wh}\nStopped variations.{Wh}\n")
-                        break
-
-                print(f"{Wh}Checking: {Gr}{variation}{Wh}")
+            def _check_variation(variation: str):
+                print(f"{Wh}Checking variation: {Gr}{variation}{Wh} {Ye}(sites={len(site_data)}){Wh}")
+                notify = _SilentNotify()
                 try:
-                    results = sherlock_mod.sherlock(
+                    sherlock_results = sherlock_mod.sherlock(
                         variation,
                         site_data,
-                        query_notify,
+                        notify,
                         dump_response=False,
                         proxy=None,
                         timeout=30,
                     )
                 except Exception as e:
-                    print(f" {Wh}[ {Ye}! {Wh}] {Ye}Skipped (invalid variation for some sites): {e}{Wh}\n")
-                    continue
+                    print(f" {Wh}[ {Ye}! {Wh}] {Ye}Sherlock error: {e}{Wh}\n")
+                    return
 
                 found_any = False
-                for site_name, payload in results.items():
+                for site_name, payload in sherlock_results.items():
                     status = payload.get("status")
                     if status is not None and status.status == QueryStatus.CLAIMED:
                         found_any = True
-                        print(f" {Wh}[ {Gr}+ {Wh}] {site_name}: {Gr}{payload.get('url_user')}")
+                        url_user = payload.get("url_user") or payload.get("url_main") or ""
+                        results[f"{site_name} ({variation})"] = url_user
+                        print(f" {Wh}[ {Gr}+ {Wh}] {site_name}: {Gr}{url_user}")
 
                 if not found_any:
                     print(f" {Wh}[ {Ye}- {Wh}] {Ye}No hits for this variation{Wh}")
                 print()
+
         else:
-            # Fallback to the legacy detector if Sherlock dependencies aren't installed.
-            results = {}
+            # Fallback checker (limited site list).
             social_media = [
                 {"url": "https://www.facebook.com/{}", "name": "Facebook"},
                 {"url": "https://www.twitter.com/{}", "name": "Twitter"},
@@ -705,28 +882,72 @@ def TrackLu():
                 {"url": "https://www.telegram.me/{}", "name": "Telegram"},
                 {"url": "https://www.weheartit.com/{}", "name": "We Heart It"},
             ]
-            print(
-                f"\n {Ye}Sherlock not available (missing deps). Using legacy username checker.{Wh}\n"
-            )
-            for idx, variation in enumerate(variations):
+
+            cpu = os.cpu_count() or 4
+            # Requests are I/O bound: threads improve throughput and typically use multiple cores too.
+            max_workers = min(64, max(8, cpu * 5), len(social_media))
+            print(f"{Ye}Sherlock not installed{Wh} {Wh}(fallback, workers={max_workers}){Wh}\n")
+
+            def _check_variation(variation: str):
+                print(f"{Wh}Checking variation: {Gr}{variation}{Wh} {Ye}(workers={max_workers}){Wh}")
+
+                def _task(site):
+                    url = site["url"].format(variation)
+                    exists, result = check_account_exists(url, site["name"], variation)
+                    return site["name"], exists, result
+
+                found_any = False
+                per_site = {}
+                with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                    futures = [ex.submit(_task, site) for site in social_media]
+                    for fut in as_completed(futures):
+                        site_name, exists, result = fut.result()
+                        per_site[site_name] = (exists, result)
+
+                for site_name in sorted(per_site.keys()):
+                    exists, result = per_site[site_name]
+                    if exists:
+                        found_any = True
+                        results[f"{site_name} ({variation})"] = result
+                        print(f" {Wh}[ {Gr}+ {Wh}] {site_name}: {Gr}{result}")
+
+                if not found_any:
+                    print(f" {Wh}[ {Ye}- {Wh}] {Ye}No hits for this variation{Wh}")
+                print()
+
+        if mode == "2":
+            # Infinite mode: auto-run variations until ESC.
+            print(f"{Ye}Infinite mode started. Press ESC to stop.{Wh}\n")
+            try:
+                with _cbreak_stdin():
+                    it = iter_username_variations_infinite(username)
+                    while True:
+                        variation = next(it)
+                        _check_variation(variation)
+                        key = _read_key_nonblocking()
+                        if key == "\x1b":
+                            print(f"{Wh}\nStopped (ESC).{Wh}\n")
+                            break
+            except Exception:
+                # If terminal doesn't allow cbreak (rare), fallback to KeyboardInterrupt.
+                it = iter_username_variations_infinite(username)
+                while True:
+                    variation = next(it)
+                    _check_variation(variation)
+        else:
+            # Normal mode: confirm each next variation.
+            for idx, variation in enumerate(safe_variations):
                 if idx > 0:
                     ans = input(f"{Wh}Check variation {Gr}{variation}{Wh}? (Y/n): {Gr}").strip().lower()
                     if ans in {"n", "no"}:
                         print(f"{Wh}\nStopped variations.{Wh}\n")
                         break
-                print(f"{Wh}Checking variation: {Gr}{variation}")
-                for site in social_media:
-                    url = site["url"].format(variation)
-                    exists, result = check_account_exists(url, site["name"], variation)
-                    if exists:
-                        results[f"{site['name']} ({variation})"] = result
-                    else:
-                        results[f"{site['name']} ({variation})"] = (f"{Ye}{result} {Ye}!")
+                _check_variation(variation)
 
-            print(f"\n {Wh}========== {Gr}SHOW INFORMATION USERNAME {Wh}==========")
-            print()
-            for site, url in results.items():
-                print(f" {Wh}[ {Gr}+ {Wh}] {site} : {Gr}{url}")
+        print(f"\n {Wh}========== {Gr}SHOW INFORMATION USERNAME {Wh}==========")
+        print()
+        for site, url in results.items():
+            print(f" {Wh}[ {Gr}+ {Wh}] {site} : {Gr}{url}")
     except Exception as e:
         print(f"{Re}Error : {e}")
         return
@@ -796,11 +1017,7 @@ def call_option(opt):
 def execute_option(opt):
     try:
         call_option(opt)
-        try:
-            input(f'\n{Wh}[ {Gr}+ {Wh}] {Gr}Press enter to continue')
-        except EOFError:
-            print(f'\n{Wh}[ {Ye}! {Wh}] {Ye}Input closed, exiting.{Wh}')
-            return
+        input(f'\n{Wh}[ {Gr}+ {Wh}] {Gr}Press enter to continue')
         main()
     except ValueError as e:
         print(e)
@@ -874,10 +1091,6 @@ def main():
         print(f'\n{Wh}[ {Re}! {Wh}] {Re}Please input number')
         time.sleep(2)
         main()
-    except EOFError:
-        print(f'\n{Wh}[ {Ye}! {Wh}] {Ye}Input closed, exiting.{Wh}')
-        time.sleep(1)
-        exit()
 
 
 if __name__ == '__main__':

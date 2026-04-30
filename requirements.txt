@@ -1,9 +1,4 @@
 requests
 phonenumbers
 python-dotenv
-colorama
-requests-futures
-pandas
-tomli
-expect
-finally
+sherlock-project
