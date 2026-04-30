@@ -40,10 +40,6 @@ if abuse_key is None or abuse_key.strip().lower() == "null":
 
 
 def _import_sherlock():
-    """
-    Import Sherlock (vendored in ./sherlock) if available.
-    Returns tuple (sherlock_mod, SitesInformation, QueryNotifyPrint, QueryStatus) or (None, ...).
-    """
     sherlock_root = os.path.join(os.path.dirname(__file__), "sherlock")
     if os.path.isdir(sherlock_root) and sherlock_root not in sys.path:
         sys.path.insert(0, sherlock_root)
@@ -800,7 +796,11 @@ def call_option(opt):
 def execute_option(opt):
     try:
         call_option(opt)
-        input(f'\n{Wh}[ {Gr}+ {Wh}] {Gr}Press enter to continue')
+        try:
+            input(f'\n{Wh}[ {Gr}+ {Wh}] {Gr}Press enter to continue')
+        except EOFError:
+            print(f'\n{Wh}[ {Ye}! {Wh}] {Ye}Input closed, exiting.{Wh}')
+            return
         main()
     except ValueError as e:
         print(e)
@@ -874,6 +874,10 @@ def main():
         print(f'\n{Wh}[ {Re}! {Wh}] {Re}Please input number')
         time.sleep(2)
         main()
+    except EOFError:
+        print(f'\n{Wh}[ {Ye}! {Wh}] {Ye}Input closed, exiting.{Wh}')
+        time.sleep(1)
+        exit()
 
 
 if __name__ == '__main__':

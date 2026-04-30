@@ -5,3 +5,5 @@ colorama
 requests-futures
 pandas
 tomli
+expect
+finally
