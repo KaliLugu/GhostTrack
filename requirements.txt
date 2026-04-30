@@ -2,3 +2,5 @@ requests
 phonenumbers
 python-dotenv
 sherlock-project
+python-nmap
+ipwhois
