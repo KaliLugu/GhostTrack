@@ -57,8 +57,6 @@ def _import_sherlock():
     except Exception:
         return None, None, None, None
 
-# utilities
-
 # decorator for attaching run_banner to a function
 def is_option(func):
     def wrapper(*args, **kwargs):
