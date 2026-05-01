@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-# GhostTR - IP and Username Tracker
+# << CODE BY HUNX04
+# << MAU RECODE ??? IZIN DULU LAH,  MINIMAL TAG AKUN GITHUB MIMIN YANG MENGARAH KE AKUN INI, LEBIH GAMPANG SI PAKE FORK
+# << KALAU DI ATAS TIDAK DI IKUTI MAKA AKAN MENDAPATKAN DOSA KARENA MIMIN GAK IKHLAS
+# “Wahai orang-orang yang beriman! Janganlah kamu saling memakan harta sesamamu dengan jalan yang batil,” (QS. An Nisaa': 29). Rasulullah SAW juga melarang umatnya untuk mengambil hak orang lain tanpa izin.
+
+# IMPORT MODULE
 
 import json
 import requests
@@ -19,13 +24,11 @@ import phonenumbers
 from phonenumbers import carrier, geocoder, timezone
 from sys import stderr
 from dotenv import load_dotenv
-import nmap
-from ipwhois import IPWhois
-from ipwhois.exceptions import IPDefinedError, ASNRegistryError
 
+# read .env
 load_dotenv()
 
-Bl = '\033[30m'
+Bl = '\033[30m'  # VARIABLE BUAT WARNA CUYY
 Re = '\033[1;31m'
 Gr = '\033[1;32m'
 Ye = '\033[1;33m'
@@ -612,7 +615,31 @@ def check_account_exists(url, site_name, username):
             if "login" in final_url or "signin" in final_url:
                 return False, "Account not found (redirected to login)"
 
-            # If no error indicators and we got 200, assume account exists
+      
+ Variations mode:
+ [ 1 ] Normal (Y/n between variations)
+ [ 2 ] Infini (auto, ESC to stop, no Y/n, generates new variants)
+ [ 3 ] No variations (only exact username)
+
+ Select mode (default 1): 2
+Sherlock enabled (cpu=12)
+Sites loaded: 362
+
+Infinite mode started. Press ESC to stop.
+
+Checking variation: Nico Hauchard (sites=362)
+ [ + ] CyberDefenders: https://cyberdefenders.org/p/Nico%20Hauchard
+ [ + ] Discord: https://discord.com
+ [ + ] Freelance.habr: https://freelance.habr.com/freelancers/Nico%20Hauchard
+ [ + ] HackerEarth: https://hackerearth.com/@Nico%20Hauchard
+ [ + ] kaskus: https://www.kaskus.co.id/@Nico%20Hauchard
+ [ + ] Mydramalist: https://www.mydramalist.com/profile/Nico%20Hauchard
+ [ + ] PepperIT: https://www.pepper.it/profile/Nico%20Hauchard/overview
+ [ + ] Roblox: https://www.roblox.com/user.aspx?username=Nico%20Hauchard
+ [ + ] omg.lol: https://Nico%20Hauchard.omg.lol
+ [ + ] threads: https://www.threads.net/@Nico%20Hauchard
+
+Checking variation: nico hauchard (sites=362)      # If no error indicators and we got 200, assume account exists
             return True, url
 
         # Default fallback
@@ -627,12 +654,12 @@ def check_account_exists(url, site_name, username):
 # FUNCTIONS FOR MENU
 @is_option
 def IP_Track():
-    ip = input(f"{Wh}\n Enter IP target : {Gr}")
+    ip = input(f"{Wh}\n Enter IP target : {Gr}")  # INPUT IP ADDRESS
 
     print()
     print(f' {Wh}============= {Gr}SHOW INFORMATION IP ADDRESS {Wh}=============')
     try:
-        req_api = requests.get(f"http://ipwho.is/{ip}", timeout=10)
+        req_api = requests.get(f"http://ipwho.is/{ip}", timeout=10)  # API IPWHOIS.IS
         ip_data = req_api.json()
         if not ip_data.get("success", True):
             print(f"{Re}Error: Invalid IP or API error")
@@ -697,6 +724,7 @@ def IP_Track():
                     print(f"{Wh} Domain           :{Gr}", abuse_data.get('domain', 'N/A'))
                     print(f"{Wh} Country          :{Gr}", abuse_data.get('countryCode', 'N/A'))
 
+                    # Interpretation du score
                     score = abuse_data.get('abuseConfidenceScore', 0)
                     if score >= 80:
                         print(f"{Wh} Risk Level       :{Re} HIGH - Potentially malicious")
@@ -715,11 +743,12 @@ def IP_Track():
         else:
             print(f"{Ye}AbuseIPDB check skipped - no API key provided{Ye}")
 
+        # Additional free IP info from ipinfo.io (no API key needed for basic info)
         try:
             ipinfo_response = requests.get(f"https://ipinfo.io/{ip}/json", timeout=10)
             if ipinfo_response.status_code == 200:
                 ipinfo_data = ipinfo_response.json()
-                if not ipinfo_data.get('bogon', False):
+                if not ipinfo_data.get('bogon', False):  # Skip if it's a bogon IP
                     print(f"\n {Wh}============= {Gr}ADDITIONAL IP INFO {Wh}=============")
                     if 'hostname' in ipinfo_data:
                         print(f"{Wh} Hostname         :{Gr}", ipinfo_data.get('hostname', 'N/A'))
@@ -730,47 +759,8 @@ def IP_Track():
                         print(f"{Wh} ASN Info         :{Gr}", asn_info.get('asn', 'N/A'))
                         print(f"{Wh} ASN Name         :{Gr}", asn_info.get('name', 'N/A'))
                         print(f"{Wh} ASN Domain       :{Gr}", asn_info.get('domain', 'N/A'))
-        except Exception:
-            pass
-
-        try:
-            whois_client = IPWhois(ip)
-            whois_data = whois_client.lookup_rdap(depth=1)
-            print(f"\n {Wh}============= {Gr}IPWHOIS RDAP DATA {Wh}=============")
-            print(f"{Wh} ASN              :{Gr}", whois_data.get('asn', 'N/A'))
-            print(f"{Wh} ASN Country      :{Gr}", whois_data.get('asn_country_code', 'N/A'))
-            network = whois_data.get('network', {})
-            if network:
-                print(f"{Wh} Network Name     :{Gr}", network.get('name', 'N/A'))
-                print(f"{Wh} Network Handle   :{Gr}", network.get('handle', 'N/A'))
-                print(f"{Wh} Network CIDR     :{Gr}", network.get('cidr', 'N/A'))
-                print(f"{Wh} Network Country  :{Gr}", network.get('country', 'N/A'))
-        except (IPDefinedError, ASNRegistryError) as e:
-            print(f"{Ye}IPWhois lookup skipped: {e}{Ye}")
         except Exception as e:
-            print(f"{Ye}IPWhois error: {e}{Ye}")
-
-        try:
-            nm = nmap.PortScanner()
-            scan_args = "-Pn -F"
-            print(f"\n {Wh}============= {Gr}NMAP FAST SCAN {Wh}=============")
-            nm.scan(ip, arguments=scan_args)
-            hosts = nm.all_hosts()
-            if hosts:
-                for host in hosts:
-                    print(f"{Wh} Host             :{Gr}{host}")
-                    for proto in nm[host].all_protocols():
-                        ports = nm[host][proto].keys()
-                        print(f"{Wh} Protocol         :{Gr}{proto}")
-                        for port in sorted(ports):
-                            port_data = nm[host][proto][port]
-                            state = port_data.get('state', 'unknown')
-                            service = port_data.get('name', 'N/A')
-                            print(f"{Wh} Port {port:>5} :{Gr} {state:<7} {Wh}service:{Gr} {service}")
-            else:
-                print(f"{Ye}Nmap scan returned no hosts. Host may be down or nmap failed.{Ye}")
-        except Exception as e:
-            print(f"{Ye}Nmap scan error: {e}{Ye}")
+            pass  # Silently skip if ipinfo.io fails
     except requests.RequestException as e:
         print(f"{Re}Error: Failed to fetch IP information - {e}")
     except json.JSONDecodeError:
@@ -782,10 +772,10 @@ def IP_Track():
 @is_option
 def phoneGW():
     User_phone = input(
-        f"\n {Wh}Enter phone number target {Gr}Ex [+6281xxxxxxxxx] {Wh}: {Gr}")
-    default_region = "ID"
+        f"\n {Wh}Enter phone number target {Gr}Ex [+6281xxxxxxxxx] {Wh}: {Gr}")  # INPUT NUMBER PHONE
+    default_region = "ID"  # DEFAULT NEGARA INDONESIA
 
-    parsed_number = phonenumbers.parse(User_phone, default_region)
+    parsed_number = phonenumbers.parse(User_phone, default_region)  # VARIABLE PHONENUMBERS
     region_code = phonenumbers.region_code_for_number(parsed_number)
     jenis_provider = carrier.name_for_number(parsed_number, "en")
     location = geocoder.description_for_number(parsed_number, "id")
@@ -841,6 +831,7 @@ def TrackLu():
 
         sherlock_mod, SitesInformation, QueryStatus, data_path = _try_import_sherlock()
 
+        # Prefer Sherlock if available (much larger site list + better accuracy).
         if sherlock_mod is not None:
             cpu = os.cpu_count() or 4
             print(f"{Ye}Sherlock enabled{Wh} {Wh}(cpu={cpu}){Wh}")
