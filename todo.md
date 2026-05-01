@@ -4,4 +4,3 @@
 - Donner plus de détails grâce a l’ip peut-être en ajoutant une api en plus d’un site d’osint
 - Mettre une fonctionnalité dans la recherche avec pseudo pour qu’il demande si prendre une variation avant de la prendre type (Y/n)
 - Mettre plusieurs choix de langue au démarrage
-- utilisé un .env pour les clé api
